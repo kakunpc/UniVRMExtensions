@@ -89,6 +89,7 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                 {
                     VRCPhysBonesToVRMSpringBonesConverter.SetSpringBoneColliderGroups(converter);
                 }
+
                 VRCPhysBonesToVRMSpringBonesConverter.SetSpringBoneColliderGroupsForVirtualCast(converter);
                 VRCPhysBonesToVRMSpringBonesConverter.SetSpringBones(converter, parametersConverter, ignoreColliders);
 
@@ -104,13 +105,13 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
         {
             foreach (var sourceColliders in converter.Source.GetComponentsInChildren<
 #if VRC_SDK_VRCSDK3
-                VRCPhysBoneCollider
+                             VRCPhysBoneCollider
 #else
                 dynamic
 #endif
-            >()
-                // ボーンごとにグループ化
-                .GroupBy(collider => collider.transform))
+                         >()
+                         // ボーンごとにグループ化
+                         .GroupBy(collider => collider.transform))
             {
                 // 変換先の対応するボーンを取得
                 var destinationBone = converter.FindCorrespondingBone(
@@ -123,7 +124,9 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                     continue;
                 }
 
-                var destinationColliders = sourceColliders.SelectMany(sourceCollider =>
+                var destinationColliders = sourceColliders
+                    .Where(e => e.shapeType != VRCPhysBoneColliderBase.ShapeType.Plane) // Planeは変換しない方がいい
+                    .SelectMany(sourceCollider =>
 #if !VRC_SDK_VRCSDK3
                     (IEnumerable<dynamic>)
 #endif
@@ -137,14 +140,15 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                     {
                         Undo.RecordObject(destinationColliderGroup, "");
                     }
+
                     destinationColliderGroup.Colliders
                         = destinationColliderGroup.Colliders.Concat(destinationColliders).ToArray();
                 }
                 else
                 {
                     (converter.DestinationIsAsset
-                        ? destinationBone.gameObject.AddComponent<VRMSpringBoneColliderGroup>()
-                        : Undo.AddComponent<VRMSpringBoneColliderGroup>(destinationBone.gameObject)).Colliders
+                            ? destinationBone.gameObject.AddComponent<VRMSpringBoneColliderGroup>()
+                            : Undo.AddComponent<VRMSpringBoneColliderGroup>(destinationBone.gameObject)).Colliders
                         = destinationColliders.ToArray();
                 }
             }
@@ -169,7 +173,8 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
             if (sourceCollider.shapeType == VRCPhysBoneColliderBase.ShapeType.Plane)
             {
                 Debug.LogWarning("Plane colliders cannot be converted" + ": "
-                    + sourceCollider.transform.RelativePathFrom(sourceCollider.transform), sourceCollider);
+                                                                       + sourceCollider.transform.RelativePathFrom(
+                                                                           sourceCollider.transform), sourceCollider);
             }
 
             var offsets = new List<Vector3>() { sourceCollider.position };
@@ -177,9 +182,11 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                 // カプセルの端から端までの長さ
                 && sourceCollider.height > sourceCollider.radius * 2)
             {
+                var up = destinationBone.up;
+                // var rotation = sourceCollider.transform.rotation * sourceCollider.rotation;
                 var distance = (sourceCollider.height - sourceCollider.radius * 2) / 2;
-                offsets.Add(offsets[0] + sourceCollider.rotation * new Vector3(0, 0, distance));
-                offsets.Add(offsets[0] + sourceCollider.rotation * new Vector3(0, 0, -distance));
+                offsets.Add(offsets[0] + (up * distance));
+                offsets.Add(offsets[0] + (up * -distance));
             }
 
             return offsets.Select(offset => new VRMSpringBoneColliderGroup.SphereCollider
@@ -209,105 +216,106 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
 
             foreach (var vrcPhysBones in converter.Source.GetComponentsInChildren<
 #if VRC_SDK_VRCSDK3
-                VRCPhysBone
+                             VRCPhysBone
 #else
                 dynamic
 #endif
-                >()
-                .Select(vrcPhysBone =>
-                {
-                    var parameters = parametersConverter(new VRCPhysBoneParameters()
-                    {
-                        Pull = vrcPhysBone.pull,
-                        PullCurve = vrcPhysBone.pullCurve,
-                        Spring = vrcPhysBone.spring,
-                        SpringCurve = vrcPhysBone.springCurve,
-                        Stiffness = vrcPhysBone.stiffness,
-                        StiffnessCurve = vrcPhysBone.stiffnessCurve,
+                         >()
+                         .Select(vrcPhysBone =>
+                         {
+                             var parameters = parametersConverter(new VRCPhysBoneParameters()
+                             {
+                                 Pull = vrcPhysBone.pull,
+                                 PullCurve = vrcPhysBone.pullCurve,
+                                 Spring = vrcPhysBone.spring,
+                                 SpringCurve = vrcPhysBone.springCurve,
+                                 Stiffness = vrcPhysBone.stiffness,
+                                 StiffnessCurve = vrcPhysBone.stiffnessCurve,
 #if VRC_SDK_VRCSDK3
-                        ImmobileType = vrcPhysBone.immobileType,
+                                 ImmobileType = vrcPhysBone.immobileType,
 #endif
-                        Immobile = vrcPhysBone.immobile,
-                        ImmobileCurve = vrcPhysBone.immobileCurve,
-                        GrabMovement = vrcPhysBone.grabMovement,
-                        MaxStretch = vrcPhysBone.maxStretch,
-                        MaxStretchCurve = vrcPhysBone.maxStretchCurve,
-                    }, new BoneInfo(converter.Destination.GetComponent<VRMMeta>(), vrcPhysBone.parameter));
+                                 Immobile = vrcPhysBone.immobile,
+                                 ImmobileCurve = vrcPhysBone.immobileCurve,
+                                 GrabMovement = vrcPhysBone.grabMovement,
+                                 MaxStretch = vrcPhysBone.maxStretch,
+                                 MaxStretchCurve = vrcPhysBone.maxStretchCurve,
+                             }, new BoneInfo(converter.Destination.GetComponent<VRMMeta>(), vrcPhysBone.parameter));
 
-                    var destinationColliderGroups = new List<VRMSpringBoneColliderGroup>();
-                    if (vrcPhysBone.colliders != null)
-                    {
-                        foreach (var sourceCollider in vrcPhysBone.colliders)
-                        {
-                            if (sourceCollider == null)
-                            {
-                                // コライダーが削除された、などで消失状態の場合
-                                continue;
-                            }
-                            if (!sourceCollider.transform.IsChildOf(converter.Source.transform))
-                            {
-                                // ルート外の参照を除外
-                                continue;
-                            }
+                             var destinationColliderGroups = new List<VRMSpringBoneColliderGroup>();
+                             if (vrcPhysBone.colliders != null)
+                             {
+                                 foreach (var sourceCollider in vrcPhysBone.colliders)
+                                 {
+                                     if (sourceCollider == null)
+                                     {
+                                         // コライダーが削除された、などで消失状態の場合
+                                         continue;
+                                     }
 
-                            // 変換先の対応するボーンを取得
-                            var destinationBone = converter.FindCorrespondingBone(
-                                sourceCollider.transform,
-                                target: null
-                            );
-                            if (destinationBone == null)
-                            {
-                                // 対応するボーンが存在しなければ
-                                continue;
-                            }
+                                     if (!sourceCollider.transform.IsChildOf(converter.Source.transform))
+                                     {
+                                         // ルート外の参照を除外
+                                         continue;
+                                     }
 
-                            var destinationColliderGroup
-                                = destinationBone.GetComponent<VRMSpringBoneColliderGroup>();
-                            if (destinationColliderGroup == null
-                                || destinationColliderGroups.Contains(destinationColliderGroup))
-                            {
-                                continue;
-                            }
+                                     // 変換先の対応するボーンを取得
+                                     var destinationBone = converter.FindCorrespondingBone(
+                                         sourceCollider.transform,
+                                         target: null
+                                     );
+                                     if (destinationBone == null)
+                                     {
+                                         // 対応するボーンが存在しなければ
+                                         continue;
+                                     }
 
-                            destinationColliderGroups.Add(destinationColliderGroup);
-                        }
-                    }
+                                     var destinationColliderGroup
+                                         = destinationBone.GetComponent<VRMSpringBoneColliderGroup>();
+                                     if (destinationColliderGroup == null
+                                         || destinationColliderGroups.Contains(destinationColliderGroup))
+                                     {
+                                         continue;
+                                     }
 
-                    if (
-                        !ignoreColliders
+                                     destinationColliderGroups.Add(destinationColliderGroup);
+                                 }
+                             }
+
+                             if (
+                                 !ignoreColliders
 #if VRC_SDK_VRCSDK3
-                            && (vrcPhysBone.allowCollision != VRCPhysBoneBase.AdvancedBool.False
-                                || vrcPhysBone.allowGrabbing != VRCPhysBoneBase.AdvancedBool.False)
+                                 && (vrcPhysBone.allowCollision != VRCPhysBoneBase.AdvancedBool.False
+                                     || vrcPhysBone.allowGrabbing != VRCPhysBoneBase.AdvancedBool.False)
 #endif
-                    )
-                    {
-                        // コライダーの変換が有効、かつデフォルトのコライダーとの干渉を許可か掴むのを許可していれば
-                        foreach (var colliderGroup in destinationHandColliderGroups)
-                        {
-                            if (destinationColliderGroups.Contains(colliderGroup))
-                            {
-                                // すでに手のコライダーが含まれていれば
-                                continue;
-                            }
+                             )
+                             {
+                                 // コライダーの変換が有効、かつデフォルトのコライダーとの干渉を許可か掴むのを許可していれば
+                                 foreach (var colliderGroup in destinationHandColliderGroups)
+                                 {
+                                     if (destinationColliderGroups.Contains(colliderGroup))
+                                     {
+                                         // すでに手のコライダーが含まれていれば
+                                         continue;
+                                     }
 
-                            // 手のコライダーを揺れ物へ追加
-                            destinationColliderGroups.Add(colliderGroup);
-                        }
-                    }
+                                     // 手のコライダーを揺れ物へ追加
+                                     destinationColliderGroups.Add(colliderGroup);
+                                 }
+                             }
 
-                    return (vrcPhysBone, parameters, destinationColliderGroups, compare: string.Join("\n", new[]
-                    {
-                        parameters.StiffnessForce,
-                        vrcPhysBone.gravity,
-                        parameters.DragForce,
-                        TransformUtilities.CalculateDistance(vrcPhysBone.transform, vrcPhysBone.radius),
-                }.Select(parameter => parameter.ToString("F2"))
-                    .Concat(destinationColliderGroups.Select(colliderGroup =>
-                        colliderGroup.transform.RelativePathFrom(converter.Destination.transform)
-                            + vrcPhysBone.parameter))
-                    ));
-                })
-                .GroupBy(vrcPhysBones => vrcPhysBones.compare)) // 同一パラメータでグループ化
+                             return (vrcPhysBone, parameters, destinationColliderGroups, compare: string.Join("\n",
+                                 new[]
+                                     {
+                                         parameters.StiffnessForce, vrcPhysBone.gravity, parameters.DragForce,
+                                         TransformUtilities.CalculateDistance(vrcPhysBone.transform,
+                                             vrcPhysBone.radius),
+                                     }.Select(parameter => parameter.ToString("F2"))
+                                     .Concat(destinationColliderGroups.Select(colliderGroup =>
+                                         colliderGroup.transform.RelativePathFrom(converter.Destination.transform)
+                                         + vrcPhysBone.parameter))
+                             ));
+                         })
+                         .GroupBy(vrcPhysBones => vrcPhysBones.compare)) // 同一パラメータでグループ化
             {
                 var vrcPhysBone = vrcPhysBones.First();
 
@@ -315,15 +323,17 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                     ? converter.Secondary.AddComponent<VRMSpringBone>()
                     : Undo.AddComponent<VRMSpringBone>(converter.Secondary);
                 vrmSpringBone.m_comment = vrcPhysBone.vrcPhysBone.parameter;
-                vrmSpringBone.m_stiffnessForce = vrcPhysBone.parameters.StiffnessForce;
-                vrmSpringBone.m_gravityPower = vrcPhysBone.vrcPhysBone.gravity / 0.05f;
-                vrmSpringBone.m_dragForce = vrcPhysBone.parameters.DragForce;
+                vrmSpringBone.m_stiffnessForce = Mathf.Clamp(vrcPhysBone.parameters.StiffnessForce, 0f, 4f);
+                vrmSpringBone.m_gravityPower = Mathf.Clamp(vrcPhysBone.vrcPhysBone.gravity / 0.05f, 0, 2);
+                vrmSpringBone.m_dragForce = Mathf.Clamp(vrcPhysBone.parameters.DragForce, 0, 1);
                 vrmSpringBone.RootBones = vrcPhysBones
-                    .Select(db => (/* SDK3未インポート用 */Transform)
-                        (db.vrcPhysBone.rootTransform != null ? db.vrcPhysBone.rootTransform : db.vrcPhysBone.transform))
-                        // VRCPhysBoneコンポーネントのRoot Transformが設定されていない場合、
-                        // コンポーネントが設定されたオブジェクトがRoot Transformとして扱われる
-                        // <https://docs.vrchat.com/docs/physbones#transforms>
+                    .Select(db => ( /* SDK3未インポート用 */Transform)
+                        (db.vrcPhysBone.rootTransform != null
+                            ? db.vrcPhysBone.rootTransform
+                            : db.vrcPhysBone.transform))
+                    // VRCPhysBoneコンポーネントのRoot Transformが設定されていない場合、
+                    // コンポーネントが設定されたオブジェクトがRoot Transformとして扱われる
+                    // <https://docs.vrchat.com/docs/physbones#transforms>
                     .Where(sourceBone => sourceBone.IsChildOf(converter.Source.transform))
                     .Distinct()
                     // 変換先の対応するボーンを取得
@@ -345,18 +355,41 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
         private static void SetSpringBoneColliderGroupsForVirtualCast(Converter converter)
         {
             var animator = converter.Destination.GetComponent<Animator>();
-            foreach (var bone in new[] { HumanBodyBones.LeftHand, HumanBodyBones.RightHand })
+
+            var bones = new Dictionary<HumanBodyBones, HumanBodyBones>();
+            bones[HumanBodyBones.LeftHand] = HumanBodyBones.LeftMiddleProximal;
+            bones[HumanBodyBones.RightHand] = HumanBodyBones.RightMiddleProximal;
+
+            foreach (var bone in bones)
             {
-                var hand = animator.GetBoneTransform(bone).gameObject;
+                var hand = animator.GetBoneTransform(bone.Key).gameObject;
+                var middle = animator.GetBoneTransform(bone.Value);
                 if (hand.GetComponent<VRMSpringBoneColliderGroup>() == null)
                 {
+                    VRMSpringBoneColliderGroup group;
                     if (converter.DestinationIsAsset)
                     {
-                        hand.AddComponent<VRMSpringBoneColliderGroup>();
+                        group = hand.AddComponent<VRMSpringBoneColliderGroup>();
                     }
                     else
                     {
-                        Undo.AddComponent<VRMSpringBoneColliderGroup>(hand);
+                        group = Undo.AddComponent<VRMSpringBoneColliderGroup>(hand);
+                    }
+
+                    // 指ボーンが取れたら
+                    if (middle != null)
+                    {
+                        // 距離を計算してその長さを半径に設定
+                        var c = group.Colliders.First();
+                        var dir = middle.transform.position - hand.transform.position;
+                        c.Radius =
+                            Mathf.Abs(dir.magnitude);
+                        c.Offset = dir;
+                    }
+                    else
+                    {
+                        // なかったらサイズのみ変更して終わり
+                        group.Colliders.First().Radius = 0.03f;
                     }
                 }
             }
