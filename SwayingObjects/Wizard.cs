@@ -1,6 +1,6 @@
+#nullable enable
 using System;
 using System.Linq;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using UniGLTF;
@@ -26,19 +26,18 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
             VRCPhysBonesToVRMSpringBones,
             VRMSpringBonesToVRCPhysBones,
             DynamicBonesToVRMSpringBones,
-            VRMSpringBonesToDynamicBones,
         }
 
-        private string version;
+        private string version = null!;
         private Direction direction = Direction.VRCPhysBonesToVRMSpringBones;
-        private Animator source = null;
-        private Animator destination = null;
+        private Animator? source = null;
+        private Animator? destination = null;
         private bool sourceEqualsDestination = false;
         private bool removeSourceSwayingObjectsWhenSourceEqualsDestination = true;
         private OverwriteMode overwriteMode = OverwriteMode.Replace;
         private bool ignoreColliders = false;
-        private MonoScript callbackFunction = null;
-        private Delegate parametersConverter;
+        private MonoScript? callbackFunction = null;
+        private Delegate? parametersConverter;
 
         /// <summary>
         /// 指定されたオブジェクトが<see cref="DynamicBone"/>、または<see cref="DynamicBoneCollider"/>を含んでいれば、<c>true</c>を返します。
@@ -106,8 +105,6 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                             return "VRM Spring Bone → VRC Phys Bone";
                         case Direction.DynamicBonesToVRMSpringBones:
                             return "Dynamic Bone → VRM Spring Bone";
-                        case Direction.VRMSpringBonesToDynamicBones:
-                            return "VRM Spring Bone → Dynamic Bone";
                         default:
                             return null;
                     }
@@ -126,7 +123,6 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                     break;
 #endif
                 case Direction.DynamicBonesToVRMSpringBones:
-                case Direction.VRMSpringBonesToDynamicBones:
                     if (DynamicBoneType == null)
                     {
                         EditorGUILayout.HelpBox(_("The Dynamic Bone asset has not been imported."), MessageType.Error);
@@ -144,7 +140,7 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
             }
             if (this.source != null)
             {
-                string unexistedComponentName = null;
+                string? unexistedComponentName = null;
                 switch (this.direction)
                 {
                     case Direction.VRCPhysBonesToVRMSpringBones:
@@ -160,7 +156,6 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                         }
                         break;
                     case Direction.VRMSpringBonesToVRCPhysBones:
-                    case Direction.VRMSpringBonesToDynamicBones:
                         if (!Wizard.ContainsVRMSpringBone(this.source))
                         {
                             unexistedComponentName = "VRMSpringBone/VRMSpringBoneColliderGroup";
@@ -191,7 +186,7 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
             }
             if (this.destination != null && this.overwriteMode == OverwriteMode.Replace)
             {
-                string existedComponentName = null;
+                string? existedComponentName = null;
                 switch (this.direction)
                 {
                     case Direction.VRCPhysBonesToVRMSpringBones:
@@ -205,12 +200,6 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                         if (Wizard.ContainsVRCPhysBone(this.destination))
                         {
                             existedComponentName = "VRCPhysBone/VRCPhysBoneCollider";
-                        }
-                        break;
-                    case Direction.VRMSpringBonesToDynamicBones:
-                        if (Wizard.ContainsDynamicBone(this.destination))
-                        {
-                            existedComponentName = "DynamicBone/DynamicBoneCollider";
                         }
                         break;
                 }
@@ -310,15 +299,6 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                             throwOnBindFailure: false
                         );
                         break;
-                    case Direction.VRMSpringBonesToDynamicBones:
-                        this.parametersConverter = Delegate.CreateDelegate(
-                            type: typeof(VRMSpringBonesToDynamicBonesConverter.ParametersConverter),
-                            target: this.callbackFunction,
-                            method: "Converter",
-                            ignoreCase: false,
-                            throwOnBindFailure: false
-                        );
-                        break;
                 }
 
                 if (this.parametersConverter == null)
@@ -342,8 +322,9 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
     {
         return new VRMSpringBoneParameters()
         {
-            StiffnessForce = vrcPhysBoneParameters.Pull / 0.075f,
-            DragForce = vrcPhysBoneParameters.Spring / 0.2f,
+            StiffnessForce = vrcPhysBoneParameters.Pull * 4.0f,
+            DragForce = vrcPhysBoneParameters.Spring,
+            GravityPower = vrcPhysBoneParameters.Gravity * 20.0f,
         };
     }";
                     break;
@@ -356,8 +337,9 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
     {
             return new VRCPhysBoneParameters()
             {
-                Pull = vrmSpringBoneParameters.StiffnessForce * 0.075f,
-                Spring = vrmSpringBoneParameters.DragForce * 0.2f,
+                Pull = vrmSpringBoneParameters.StiffnessForce / 4.0f,
+                Spring = vrmSpringBoneParameters.DragForce,
+                Gravity = vrmSpringBoneParameters.GravityPower / 20.0f;
                 Immobile = 0,
             };
         }
@@ -374,22 +356,8 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
         {
             StiffnessForce = dynamicBoneParameters.Elasticity / 0.05f,
             DragForce = dynamicBoneParameters.Damping / 0.6f,
-        };
-    }";
-                    break;
-                case Direction.VRMSpringBonesToDynamicBones:
-                    code = @"
-    public static DynamicBoneParameters Converter(
-        VRMSpringBoneParameters vrmSpringBoneParameters,
-        BoneInfo boneInfo
-    )
-    {
-        return new DynamicBoneParameters()
-        {
-            Elasticity = vrmSpringBoneParameters.StiffnessForce * 0.05f,
-            Damping = vrmSpringBoneParameters.DragForce * 0.6f,
-            Stiffness = 0,
-            Inert = 0,
+            GravityPower = dynamicBoneParameters.Gravity.magnitude,
+            GravityDir = dynamicBoneParameters.Gravity.normalized,
         };
     }";
                     break;
@@ -412,7 +380,7 @@ public class Example : MonoBehaviour
         /// <param name="animator"></param>
         /// <param name="label"></param>
         /// <returns>バリデーションエラーがなければ <c>true</c>。</returns>
-        private bool ReportRootObjectValidation(Animator animator, string label)
+        private bool ReportRootObjectValidation(Animator? animator, string label)
         {
             if (animator == null)
             {
@@ -431,6 +399,11 @@ public class Example : MonoBehaviour
 
         private async void OnWizardCreate()
         {
+            if (this.source == null || this.destination == null)
+            {
+                throw new InvalidOperationException();
+            }
+
             switch (this.direction)
             {
                 case Direction.VRCPhysBonesToVRMSpringBones:
@@ -460,15 +433,6 @@ public class Example : MonoBehaviour
                         (DynamicBonesToVRMSpringBonesConverter.ParametersConverter)this.parametersConverter
                     );
                     break;
-                case Direction.VRMSpringBonesToDynamicBones:
-                    VRMSpringBonesToDynamicBonesConverter.Convert(
-                        this.source,
-                        this.destination,
-                        this.overwriteMode,
-                        this.ignoreColliders,
-                        (VRMSpringBonesToDynamicBonesConverter.ParametersConverter)this.parametersConverter
-                    );
-                    break;
             }
 
             if (this.sourceEqualsDestination && this.removeSourceSwayingObjectsWhenSourceEqualsDestination)
@@ -487,8 +451,8 @@ public class Example : MonoBehaviour
                     {
                         Undo.IncrementCurrentGroup();
                         Undo.SetCurrentGroupName($"Remove Swaying objects from “{source.name}”");
+                        undoGroupIndex = Undo.GetCurrentGroup();
                     }
-                    undoGroupIndex = Undo.GetCurrentGroup();
 
                     switch (this.direction)
                     {
@@ -499,7 +463,6 @@ public class Example : MonoBehaviour
                             Utilities.DestroyDynamicBones(source, sourceIsAsset);
                             break;
                         case Direction.VRMSpringBonesToVRCPhysBones:
-                        case Direction.VRMSpringBonesToDynamicBones:
                             Utilities.DestroyVRMSpringBones(source, sourceIsAsset);
                             break;
                     }
@@ -518,7 +481,7 @@ public class Example : MonoBehaviour
                     {
                         PrefabUtility.UnloadPrefabContents(source);
                     }
-                    else
+                    else if (undoGroupIndex != null)
                     {
                         Undo.CollapseUndoOperations(undoGroupIndex.Value);
                     }

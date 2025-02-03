@@ -1,3 +1,4 @@
+#nullable enable
 using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
@@ -41,8 +42,9 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
         {
             return new VRMSpringBoneParameters()
             {
-                StiffnessForce = vrcPhysBoneParameters.Pull / 0.075f,
-                DragForce = vrcPhysBoneParameters.Spring / 0.2f,
+                StiffnessForce = vrcPhysBoneParameters.Pull * 4.0f,
+                DragForce = vrcPhysBoneParameters.Spring,
+                GravityPower = vrcPhysBoneParameters.Gravity * 20.0f,
             };
         }
 
@@ -70,7 +72,7 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
             Animator destination,
             OverwriteMode overwriteMode = OverwriteMode.Replace,
             bool ignoreColliders = false,
-            ParametersConverter parametersConverter = null
+            ParametersConverter? parametersConverter = null
         )
         {
             if (parametersConverter == null)
@@ -220,17 +222,23 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
 #else
                 dynamic
 #endif
-                         >()
-                         .Select(vrcPhysBone =>
-                         {
-                             var parameters = parametersConverter(new VRCPhysBoneParameters()
-                             {
-                                 Pull = vrcPhysBone.pull,
-                                 PullCurve = vrcPhysBone.pullCurve,
-                                 Spring = vrcPhysBone.spring,
-                                 SpringCurve = vrcPhysBone.springCurve,
-                                 Stiffness = vrcPhysBone.stiffness,
-                                 StiffnessCurve = vrcPhysBone.stiffnessCurve,
+                >()
+                .Select(vrcPhysBone =>
+                {
+                    var parameters = parametersConverter(new VRCPhysBoneParameters()
+                    {
+#if VRC_SDK_VRCSDK3
+                        Version = vrcPhysBone.version,
+#endif
+                        Pull = vrcPhysBone.pull,
+                        PullCurve = vrcPhysBone.pullCurve,
+                        Spring = vrcPhysBone.spring,
+                        SpringCurve = vrcPhysBone.springCurve,
+                        Stiffness = vrcPhysBone.stiffness,
+                        StiffnessCurve = vrcPhysBone.stiffnessCurve,
+                        Gravity = vrcPhysBone.gravity,
+                        GravityFalloff = vrcPhysBone.gravityFalloff,
+                        GravityFalloffCurve = vrcPhysBone.gravityFalloffCurve,
 #if VRC_SDK_VRCSDK3
                                  ImmobileType = vrcPhysBone.immobileType,
 #endif
@@ -303,19 +311,19 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                                  }
                              }
 
-                             return (vrcPhysBone, parameters, destinationColliderGroups, compare: string.Join("\n",
-                                 new[]
-                                     {
-                                         parameters.StiffnessForce, vrcPhysBone.gravity, parameters.DragForce,
-                                         TransformUtilities.CalculateDistance(vrcPhysBone.transform,
-                                             vrcPhysBone.radius),
-                                     }.Select(parameter => parameter.ToString("F2"))
-                                     .Concat(destinationColliderGroups.Select(colliderGroup =>
-                                         colliderGroup.transform.RelativePathFrom(converter.Destination.transform)
-                                         + vrcPhysBone.parameter))
-                             ));
-                         })
-                         .GroupBy(vrcPhysBones => vrcPhysBones.compare)) // 同一パラメータでグループ化
+                    return (vrcPhysBone, parameters, destinationColliderGroups, compare: string.Join("\n", new[]
+                    {
+                        parameters.StiffnessForce,
+                        parameters.GravityPower,
+                        parameters.DragForce,
+                        TransformUtilities.CalculateDistance(vrcPhysBone.transform, vrcPhysBone.radius),
+                }.Select(parameter => parameter.ToString("F2"))
+                    .Concat(destinationColliderGroups.Select(colliderGroup =>
+                        colliderGroup.transform.RelativePathFrom(converter.Destination.transform)
+                            + vrcPhysBone.parameter))
+                    ));
+                })
+                .GroupBy(vrcPhysBones => vrcPhysBones.compare)) // 同一パラメータでグループ化
             {
                 var vrcPhysBone = vrcPhysBones.First();
 
@@ -325,6 +333,7 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                 vrmSpringBone.m_comment = vrcPhysBone.vrcPhysBone.parameter;
                 vrmSpringBone.m_stiffnessForce = Mathf.Clamp(vrcPhysBone.parameters.StiffnessForce, 0f, 4f);
                 vrmSpringBone.m_gravityPower = Mathf.Clamp(vrcPhysBone.vrcPhysBone.gravity / 0.05f, 0, 2);
+                vrmSpringBone.m_gravityDir = vrcPhysBone.parameters.GravityDir;
                 vrmSpringBone.m_dragForce = Mathf.Clamp(vrcPhysBone.parameters.DragForce, 0, 1);
                 vrmSpringBone.RootBones = vrcPhysBones
                     .Select(db => ( /* SDK3未インポート用 */Transform)
