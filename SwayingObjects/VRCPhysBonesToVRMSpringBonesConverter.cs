@@ -99,6 +99,14 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
             }
         }
 
+        static string GetFullPath(Transform t)
+        {
+            if (t.parent == null)
+                return "/" + t.name; // ルートの場合は "/" をつける
+            return GetFullPath(t.parent) + "/" + t.name;
+        }
+
+
         /// <summary>
         /// 変換元の<see cref="VRCPhysBoneCollider"/>を基に、変換先へ<see cref="VRMSpringBoneColliderGroup"/>を設定します。
         /// </summary>
@@ -132,7 +140,25 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
 #if !VRC_SDK_VRCSDK3
                     (IEnumerable<dynamic>)
 #endif
-                    VRCPhysBonesToVRMSpringBonesConverter.ConvertCollider(sourceCollider, destinationBone));
+                        VRCPhysBonesToVRMSpringBonesConverter.ConvertCollider(sourceCollider, destinationBone));
+
+                // Rootが指定されていればboneをその箇所に移動させる
+                foreach (var vrcPhysBoneCollider in sourceColliders)
+                {
+                    if (vrcPhysBoneCollider.rootTransform != null)
+                    {
+                        // 移動先のBonePathを取得
+                        var destinationRootBone = converter.FindCorrespondingBone(
+                            vrcPhysBoneCollider.rootTransform,
+                            "VRCPhysBoneCollider → VRMSpringBoneColliderGroup"
+                        );
+
+                        if (destinationRootBone != null)
+                        {
+                            destinationBone = destinationRootBone;
+                        }
+                    }
+                }
 
                 var destinationColliderGroup = destinationBone.GetComponent<VRMSpringBoneColliderGroup>();
                 if (destinationColliderGroup != null)
@@ -222,23 +248,23 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
 #else
                 dynamic
 #endif
-                >()
-                .Select(vrcPhysBone =>
-                {
-                    var parameters = parametersConverter(new VRCPhysBoneParameters()
-                    {
+                         >()
+                         .Select(vrcPhysBone =>
+                         {
+                             var parameters = parametersConverter(new VRCPhysBoneParameters()
+                             {
 #if VRC_SDK_VRCSDK3
-                        Version = vrcPhysBone.version,
+                                 Version = vrcPhysBone.version,
 #endif
-                        Pull = vrcPhysBone.pull,
-                        PullCurve = vrcPhysBone.pullCurve,
-                        Spring = vrcPhysBone.spring,
-                        SpringCurve = vrcPhysBone.springCurve,
-                        Stiffness = vrcPhysBone.stiffness,
-                        StiffnessCurve = vrcPhysBone.stiffnessCurve,
-                        Gravity = vrcPhysBone.gravity,
-                        GravityFalloff = vrcPhysBone.gravityFalloff,
-                        GravityFalloffCurve = vrcPhysBone.gravityFalloffCurve,
+                                 Pull = vrcPhysBone.pull,
+                                 PullCurve = vrcPhysBone.pullCurve,
+                                 Spring = vrcPhysBone.spring,
+                                 SpringCurve = vrcPhysBone.springCurve,
+                                 Stiffness = vrcPhysBone.stiffness,
+                                 StiffnessCurve = vrcPhysBone.stiffnessCurve,
+                                 Gravity = vrcPhysBone.gravity,
+                                 GravityFalloff = vrcPhysBone.gravityFalloff,
+                                 GravityFalloffCurve = vrcPhysBone.gravityFalloffCurve,
 #if VRC_SDK_VRCSDK3
                                  ImmobileType = vrcPhysBone.immobileType,
 #endif
@@ -311,31 +337,23 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                                  }
                              }
 
-                    return (vrcPhysBone, parameters, destinationColliderGroups, compare: string.Join("\n", new[]
-                    {
-                        parameters.StiffnessForce,
-                        parameters.GravityPower,
-                        parameters.DragForce,
-                        TransformUtilities.CalculateDistance(vrcPhysBone.transform, vrcPhysBone.radius),
-                }.Select(parameter => parameter.ToString("F2"))
-                    .Concat(destinationColliderGroups.Select(colliderGroup =>
-                        colliderGroup.transform.RelativePathFrom(converter.Destination.transform)
-                            + vrcPhysBone.parameter))
-                    ));
-                })
-                .GroupBy(vrcPhysBones => vrcPhysBones.compare)) // 同一パラメータでグループ化
+                             return (vrcPhysBone, parameters, destinationColliderGroups, compare: string.Join("\n",
+                                 new[]
+                                     {
+                                         parameters.StiffnessForce, parameters.GravityPower, parameters.DragForce,
+                                         TransformUtilities.CalculateDistance(vrcPhysBone.transform,
+                                             vrcPhysBone.radius),
+                                     }.Select(parameter => parameter.ToString("F2"))
+                                     .Concat(destinationColliderGroups.Select(colliderGroup =>
+                                         colliderGroup.transform.RelativePathFrom(converter.Destination.transform)
+                                         + vrcPhysBone.parameter))
+                             ));
+                         })
+                         .GroupBy(vrcPhysBones => vrcPhysBones.compare)) // 同一パラメータでグループ化
             {
                 var vrcPhysBone = vrcPhysBones.First();
 
-                var vrmSpringBone = converter.DestinationIsAsset
-                    ? converter.Secondary.AddComponent<VRMSpringBone>()
-                    : Undo.AddComponent<VRMSpringBone>(converter.Secondary);
-                vrmSpringBone.m_comment = vrcPhysBone.vrcPhysBone.parameter;
-                vrmSpringBone.m_stiffnessForce = Mathf.Clamp(vrcPhysBone.parameters.StiffnessForce, 0f, 4f);
-                vrmSpringBone.m_gravityPower = Mathf.Clamp(vrcPhysBone.vrcPhysBone.gravity / 0.05f, 0, 2);
-                vrmSpringBone.m_gravityDir = vrcPhysBone.parameters.GravityDir;
-                vrmSpringBone.m_dragForce = Mathf.Clamp(vrcPhysBone.parameters.DragForce, 0, 1);
-                vrmSpringBone.RootBones = vrcPhysBones
+                var rootBones = vrcPhysBones
                     .Select(db => ( /* SDK3未インポート用 */Transform)
                         (db.vrcPhysBone.rootTransform != null
                             ? db.vrcPhysBone.rootTransform
@@ -347,13 +365,33 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                     .Distinct()
                     // 変換先の対応するボーンを取得
                     .Select(sourceBone => converter.FindCorrespondingBone(sourceBone, "VRCPhysBone → VRMSpringBone"))
+                    .Where(x=>x != null)
                     .ToList();
-                vrmSpringBone.m_hitRadius = TransformUtilities.CalculateDistance(
-                    vrcPhysBone.vrcPhysBone.transform,
-                    vrcPhysBone.vrcPhysBone.radius,
-                    converter.Secondary.transform
-                );
-                vrmSpringBone.ColliderGroups = vrcPhysBone.destinationColliderGroups.ToArray();
+
+                if (rootBones.Count > 0)
+                {
+                    var isHair = rootBones.Any(x =>
+                        (x?.name.ToLower().Contains("hair") ?? false) ||
+                        (x?.name.ToLower().Contains("ahoge") ?? false) ||
+                        (x?.name.ToLower().Contains("tail") ?? false));
+
+                    var vrmSpringBone = converter.DestinationIsAsset
+                        ? converter.Secondary.AddComponent<VRMSpringBone>()
+                        : Undo.AddComponent<VRMSpringBone>(converter.Secondary);
+                    vrmSpringBone.m_comment = vrcPhysBone.vrcPhysBone.parameter;
+                    vrmSpringBone.m_stiffnessForce =
+                        isHair ? 0.5f : 1f; //Mathf.Clamp(vrcPhysBone.parameters.StiffnessForce, 0f, 4f);
+                    vrmSpringBone.m_gravityPower = 0f; //Mathf.Clamp(vrcPhysB    one.vrcPhysBone.gravity / 0.05f, 0, 2);
+                    vrmSpringBone.m_gravityDir = new Vector3(0f, -1f, 0f); //vrcPhysBone.parameters.GravityDir;
+                    vrmSpringBone.m_dragForce = 0.65f; //Mathf.Clamp(vrcPhysBone.parameters.DragForce, 0, 1);
+                    vrmSpringBone.RootBones = rootBones;
+                    vrmSpringBone.m_hitRadius = TransformUtilities.CalculateDistance(
+                        vrcPhysBone.vrcPhysBone.transform,
+                        vrcPhysBone.vrcPhysBone.radius,
+                        converter.Secondary.transform
+                    );
+                    vrmSpringBone.ColliderGroups = vrcPhysBone.destinationColliderGroups.ToArray();
+                }
             }
         }
 
