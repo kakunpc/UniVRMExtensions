@@ -378,7 +378,14 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                     var vrmSpringBone = converter.DestinationIsAsset
                         ? converter.Secondary.AddComponent<VRMSpringBone>()
                         : Undo.AddComponent<VRMSpringBone>(converter.Secondary);
-                    vrmSpringBone.m_comment = vrcPhysBone.vrcPhysBone.parameter;
+                    var comment = vrcPhysBone.vrcPhysBone.parameter;
+                    if (string.IsNullOrWhiteSpace(comment))
+                    {
+                        // オブジェクトのRoot名を入れる
+                        comment = rootBones.First()?.name ?? "";
+                    }
+
+                    vrmSpringBone.m_comment = comment;
                     vrmSpringBone.m_stiffnessForce =
                         isHair ? 0.5f : 1f; //Mathf.Clamp(vrcPhysBone.parameters.StiffnessForce, 0f, 4f);
                     vrmSpringBone.m_gravityPower = 0f; //Mathf.Clamp(vrcPhysB    one.vrcPhysBone.gravity / 0.05f, 0, 2);
