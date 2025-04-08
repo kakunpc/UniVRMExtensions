@@ -169,15 +169,55 @@ namespace Esperecyan.UniVRMExtensions.SwayingObjects
                         Undo.RecordObject(destinationColliderGroup, "");
                     }
 
+                    // スケールを加味してコライダーのサイズを変更
+                    var newOffsets = new List<VRMSpringBoneColliderGroup.SphereCollider>();
+                    foreach (var collider in destinationColliders.ToArray())
+                    {
+                        collider.Offset = Vector3.Scale(collider.Offset, destinationColliderGroup.transform.lossyScale);
+                        collider.Radius *= destinationColliderGroup.transform.lossyScale.x;
+                        newOffsets.Add(new VRMSpringBoneColliderGroup.SphereCollider()
+                        {
+                            Offset = collider.Offset,
+                            Radius = collider.Radius,
+                        });
+                    }
+                    // Rotationも0になったときを想定して修正する
+                    foreach (var collider in newOffsets)
+                    {
+                        var vector = destinationBone.localPosition + collider.Offset;
+                        var rotation = Quaternion.Inverse(destinationBone.rotation);
+                        collider.Offset = rotation * (vector - destinationBone.localPosition);
+                    }
+
                     destinationColliderGroup.Colliders
-                        = destinationColliderGroup.Colliders.Concat(destinationColliders).ToArray();
+                        = destinationColliderGroup.Colliders.Concat(newOffsets).ToArray();
                 }
                 else
                 {
+                    // スケールを加味してコライダーのサイズを変更
+                    var newOffsets = new List<VRMSpringBoneColliderGroup.SphereCollider>();
+                    foreach (var collider in destinationColliders.ToArray())
+                    {
+                        collider.Offset = Vector3.Scale(collider.Offset, destinationBone.lossyScale);
+                        collider.Radius *= destinationBone.lossyScale.x;
+                        newOffsets.Add(new VRMSpringBoneColliderGroup.SphereCollider()
+                        {
+                            Offset = collider.Offset,
+                            Radius = collider.Radius,
+                        });
+                    }
+                    // Rotationも0になったときを想定して修正する
+                    foreach (var collider in newOffsets)
+                    {
+                        var vector = destinationBone.localPosition + collider.Offset;
+                        var rotation = Quaternion.Inverse(destinationBone.rotation);
+                        collider.Offset = rotation * (vector - destinationBone.localPosition);
+                    }
+
                     (converter.DestinationIsAsset
                             ? destinationBone.gameObject.AddComponent<VRMSpringBoneColliderGroup>()
                             : Undo.AddComponent<VRMSpringBoneColliderGroup>(destinationBone.gameObject)).Colliders
-                        = destinationColliders.ToArray();
+                        = newOffsets.ToArray();
                 }
             }
         }
